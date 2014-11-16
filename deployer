@@ -1,0 +1,161 @@
+#!/usr/bin/python3
+# -*- coding: utf-8 -*-
+""" A script that helps you to deploy your website over FTP.
+
+    Author: Julien Delplanque
+"""
+
+import os
+import os.path
+import getpass
+import argparse
+from ftputil import *
+
+def is_black_listed(file_path: str, black_list: list):
+    """ Return True if the file_path is in the black_list.
+
+    Keyword arguments:
+        file_path  - A file path.
+        black_list - A list containing black listed paths.
+    """
+    for black_listed in black_list:
+        prefix = os.path.commonprefix([black_listed, file_path]).split('/')
+        if prefix == black_listed.split('/') or file_path == black_listed:
+            return True
+    return False
+
+def backup_directory(ftp_url: str, username: str, password: str,
+                        path_on_server: str, black_list: list=[]):
+    """ Backup a directory on the server in a local directory of the same name.
+
+    Keyword arguments:
+        ftp_url        - The url of the ftp server.
+        username       - The username.
+        password       - The password.
+        path_on_server - The path of the server's directory that has to be
+                         backuped.
+        black_list     - The path of files that don't have to be backuped.
+    """
+    with FTPHost(ftp_url, username, password) as host:
+        files = host.walk(path_on_server)
+        for f in files:
+            if not is_black_listed(f[0], black_list):
+                os.makedirs(f[0])
+                print("Created directory: "+f[0])
+                for regular_file in f[2]:
+                    complete_path = os.path.join(f[0], regular_file)
+                    if not is_black_listed(complete_path, black_list):
+                        host.download(complete_path, complete_path)
+                        print("\tDownloaded file: "+complete_path)
+
+def upload_directory(ftp_url: str, username: str, password: str,
+                        local_path: str, path_on_server: str,
+                        black_list: list=[]):
+    """ Upload a local directory on the server.
+
+    Keyword arguments:
+        ftp_url        - The url of the ftp server.
+        username       - The username.
+        password       - The password.
+        local_path     - The path of the local directory that has to be
+                         uploaded.
+        path_on_server - The path of the directory on the server where the
+                         local directory has to be uploaded.
+    """
+    with FTPHost(ftp_url, username, password) as host:
+        files = os.walk(local_path)
+        for f in files:
+            if not is_black_listed(f[0], black_list):
+                path_list = f[0].split('/')
+                path_list[0] = path_on_server
+                host.makedirs(os.path.join('/'.join(path_list)))
+                print("Created directory: "+os.path.join('/'.join(path_list)))
+                for regular_file in f[2]:
+                    if not is_black_listed(os.path.join(f[0], regular_file), black_list):
+                        host.upload(os.path.join(f[0], regular_file),
+                                    os.path.join('/'.join(path_list),
+                                    regular_file))
+                        print("\tUploaded: "+os.path.join('/'.join(path_list), regular_file))
+
+def remove_directory(ftp_url: str, username: str, password: str,
+                        path_on_server: str):
+    """ Remove a directory and all its children on the server.
+
+    Keyword arguments:
+        ftp_url        - The url of the ftp server.
+        username       - The username.
+        password       - The password.
+        path_on_server - The directory on the server that has to be removed.
+    """
+    with FTPHost(ftp_url, username, password) as host:
+        host.rmtree(path_on_server)
+
+def deploy_website(ftp_url: str, username: str, password: str,
+                    deployed_dir: str, to_deploy_dir: str):
+    """ Rename deployed_dir for backup and to_deploy_dir as deployed_dir so the
+        new website is deployed.
+
+    Keyword arguments:
+        ftp_url       - The url of the ftp server.
+        username      - The username.
+        password      - The password.
+        deployed_dir  - The path of the directory where the website is actually
+                        deployed.
+        to_deploy_dir - The path of the directory to deploy.
+    """
+    with FTPHost(ftp_url, username, password) as host:
+        host.rename(deployed_dir, deployed_dir+".bak")
+        host.rename(to_deploy_dir, deployed_dir)
+
+def main():
+    """ Main function of this program.
+    """
+    parser = argparse.ArgumentParser(description='Deployment over FTP tool.')
+    # Required arguments
+    parser.add_argument('-ftp', '--ftp', default=None, required=True,
+                       help='Specify the ftp url.')
+    parser.add_argument('-u', '--username', default=None, required=True,
+                       help='Specify the username, will prompt for a'+
+                            ' password.')
+    # Upload
+    parser.add_argument('-up', '--upload', nargs=2, default=None, dest='upload',
+                       metavar=('SOURCE', 'TARGET'), help='Upload the website.')
+    # Deployment
+    parser.add_argument('-d', '--deploy', nargs=2, default=None, dest='deploy',
+                       metavar=('DIRECTORY_TO_DEPLOY', 'DEPLOYMENT_DIRECTORY'),
+                       help='Rename the existing website directory adding'+
+                            ' ".bak" ath the end of the directory and rename'+
+                            ' the new website\'s directory as the old one to'+
+                            ' put it online.')
+    # Remove
+    parser.add_argument('-rm', '--remove', default=None, dest='remove',
+                        metavar=('DIRECTORY_TO_REMOVE'),
+                        help='Remove the directory on the ftp server.')
+    # Backup
+    parser.add_argument('-b', '--backup', default=None, dest='backup',
+                       metavar='DIRECTORY_TO_BACKUP',
+                       help='Backup the specified directory on the server in'+
+                            ' the destination local directory.')
+    # Black list specification
+    parser.add_argument('-bl', '--black-listed', nargs='*', default=[],
+                       dest='black_listed', metavar='BLACK_LISTED_FILE',
+                       help='Black list some files. So these files are not be'+
+                            ' used for backup and upload.')
+
+    args = parser.parse_args()
+
+    password = getpass.getpass("Enter FTP password for %s: " % args.username)
+    if args.upload:
+        upload_directory(args.ftp, args.username, password, args.upload[0],
+                        args.upload[1], args.black_listed)
+    if args.deploy:
+        deploy_website(args.ftp, args.username, password, args.deploy[1],
+                        args.deploy[0])
+    if args.backup:
+        backup_directory(args.ftp, args.username, password, args.backup,
+                        args.black_listed)
+    if args.remove:
+        remove_directory(args.ftp, args.username, password, args.remove)
+
+if __name__ == '__main__':
+    main()

@@ -146,16 +146,24 @@ def main():
 
     password = getpass.getpass("Enter FTP password for %s: " % args.username)
     if args.upload:
+        print("=== Uploading Website ===")
         upload_directory(args.ftp, args.username, password, args.upload[0],
                         args.upload[1], args.black_listed)
     if args.deploy:
+        print("=== Deploying website ===")
         deploy_website(args.ftp, args.username, password, args.deploy[1],
                         args.deploy[0])
+        print("Website deployed.")
     if args.backup:
+        print("=== Backup directory ===")
         backup_directory(args.ftp, args.username, password, args.backup,
                         args.black_listed)
+        print("Directory "+args.backup+" saved.")
     if args.remove:
+        print("=== Removing directory ===")
         remove_directory(args.ftp, args.username, password, args.remove)
+        print("Directory "+args.remove+" removed from server.")
+    print("Finished.")
 
 if __name__ == '__main__':
     main()
